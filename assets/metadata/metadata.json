@@ -1,0 +1,26 @@
+{
+  "docker": {
+    "entries": {
+      "daemon.json": {
+        "content": "{\"builder\":{\"gc\":{\"defaultKeepStorage\":\"20GB\",\"enabled\":true}},\"experimental\":false,\"features\":{\"buildkit\":true}}"
+      }
+    }
+  },
+  "swap": {
+    "entries": {
+      "size": {
+        "content": "1024M"
+      }
+    }
+  },
+  "net": {
+    "entries": {
+      "internal": {
+        "content": "192.168.65.4"
+      },
+      "services": {
+        "content": "192.168.65.5"
+      }
+    }
+  }
+}
