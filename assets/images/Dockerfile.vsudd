@@ -1,0 +1,12 @@
+FROM linuxkit/alpine:0c069d0fd7defddb6e03925fcd4915407db0c9e1 AS mirror
+RUN apk add --no-cache go musl-dev gcc build-base
+ENV GOPATH=/go PATH=$PATH:/go/bin
+COPY . /go/src/github.com/linuxkit/virtsock
+WORKDIR /go/src/github.com/linuxkit/virtsock
+RUN GOOS=linux GOARCH=amd64 \
+    go mod init && go mod tidy && rm -fr vendor && \
+    go build -o bin/vsudd.linux -buildmode pie --ldflags '-s -w -extldflags "-static"' github.com/linuxkit/virtsock/cmd/vsudd
+
+FROM scratch
+COPY --from=mirror /go/src/github.com/linuxkit/virtsock/bin/vsudd.linux /vsudd
+ENTRYPOINT ["/vsudd"]

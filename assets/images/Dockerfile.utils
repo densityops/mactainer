@@ -1,0 +1,8 @@
+FROM apline:latest as alpine
+
+RUN apk add socat
+
+FROM scratch
+ENTRYPOINT []
+WORKDIR /
+COPY --from=alpine /usr/bin/socat /usr/bin/

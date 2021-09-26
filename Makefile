@@ -1,27 +1,33 @@
 
-# brew install opam libev libffi pkg-config autoconf automake libtool dylibbundler wget
-
+# brew install opam libev libffi pkg-config autoconf automake libtool dylibbundler wget docker
+# Add portainer
+MAKEFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
+ROOT_DIR := $(dir $(MAKEFILE_PATH))
 BUILD_DIR := _build
 BUILD_DIR_BIN := $(BUILD_DIR)/bin
 DEPS_DIR := $(abspath deps)
+IMAGE_DIR := $(abspath $(ROOT_DIR)/assets/images)
 
 LINUXKIT := $(abspath $(BUILD_DIR_BIN)/linuxkit)
 HYPERKIT := $(abspath $(BUILD_DIR_BIN)/hyperkit)
 VPNKIT := $(abspath $(BUILD_DIR_BIN)/vpnkit)
 
+VPNKIT_GIT_VERSION=$(shell cd $(DEPS_DIR)/vpnkit && git rev-parse --short -q HEAD)
+VIRTSOCK_GIT_VERSION=$(shell cd $(DEPS_DIR)/virtsock && git rev-parse --short -q HEAD)
+
 .PHONY: build-instances
 build-instances: build-dir
 	@$(LINUXKIT) build -dir $(BUILD_DIR)/instances/mactainer -format kernel+initrd instances/mactainer.yml
-	@cp assets/uefi/UEFI.fd $(BUILD_DIR)/instances/mactainer
-	@cp assets/metadata/metadata.json $(BUILD_DIR)/instances/mactainer
-
+	@cp -f assets/uefi/UEFI.fd $(BUILD_DIR)/instances/mactainer
+	@cp -f assets/metadata/metadata.json $(BUILD_DIR)/instances/mactainer
 
 .PHONY: run-instances
 run-instances:
 	@mkdir -p $(BUILD_DIR)/run/mactainer
-	@$(LINUXKIT) run hyperkit \
+	@$(LINUXKIT) -v run hyperkit \
+		-hyperkit=$(HYPERKIT) \
 		-networking=vpnkit \
-		-vsock-ports=2376 \
+		-vsock-ports=2376,1525 \
 		-disk size=4096M \
 		-data-file $(BUILD_DIR)/instances/mactainer/metadata.json \
 		-vpnkit=$(VPNKIT) \
@@ -33,8 +39,32 @@ run-instances:
 		$(BUILD_DIR)/instances/mactainer/mactainer
 	@rm -fr $(BUILD_DIR)/run/mactainer
 
+.PHONY: run-docker
+run-docker:
+	@docker -H unix://$(BUILD_DIR)/run/mactainer/guest.00000948 run -p 1345:1245 --rm  -it centos /bin/bash
+
+.PHONY: build-and-push-images
+build-and-push-images:
+	@cd $(DEPS_DIR)/vpnkit && \
+		docker build -t quay.io/densityops/vpnkit-expose-port:$(VPNKIT_GIT_VERSION) -f $(IMAGE_DIR)/Dockerfile.vpnkit-expose-port . && \
+		docker push quay.io/densityops/vpnkit-expose-port:$(VPNKIT_GIT_VERSION) && \
+		docker build -t quay.io/densityops/vpnkit-forwarder:$(VPNKIT_GIT_VERSION) -f $(IMAGE_DIR)/Dockerfile.vpnkit-forwarder . && \
+		docker push quay.io/densityops/vpnkit-forwarder:$(VPNKIT_GIT_VERSION)
+		
+	@cd $(DEPS_DIR)/vpnkit/c/vpnkit-tap-vsockd && \
+		docker build -t quay.io/densityops/vpnkit-tap-vsockd:$(VPNKIT_GIT_VERSION) -f $(IMAGE_DIR)/Dockerfile.vpnkit-tap-vsockd . && \
+		docker push quay.io/densityops/vpnkit-tap-vsockd:$(VPNKIT_GIT_VERSION)
+
+	@cd $(DEPS_DIR)/vpnkit/c/vpnkit-9pmount-vsock && \
+		docker build -t quay.io/densityops/vpnkit-9pmount-vsock:$(VPNKIT_GIT_VERSION) -f $(IMAGE_DIR)/Dockerfile.vpnkit-9pmount-vsock . && \
+		docker push quay.io/densityops/vpnkit-9pmount-vsock:$(VPNKIT_GIT_VERSION)
+
+	@cd $(DEPS_DIR)/virtsock && \
+		docker build -t quay.io/densityops/vsudd:$(VIRTSOCK_GIT_VERSION) -f $(IMAGE_DIR)/Dockerfile.vsudd . && \
+		docker push quay.io/densityops/vsudd:$(VIRTSOCK_GIT_VERSION)
+
 .PHONY: build
-build: build-deps build-dir
+build: build-instances build-deps build-dir
 	@echo "build done"
 
 .PHONY: build-dir
