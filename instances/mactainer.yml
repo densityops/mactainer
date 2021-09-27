@@ -1,13 +1,13 @@
 # This is an example for building the open source components of Docker for Mac
 kernel:
-  image: linuxkit/kernel:5.10.47
+  image: linuxkit/kernel:5.10.47  
   cmdline: "earlyprintk=serial page_poison=1 vsyscall=emulate panic=1 nospec_store_bypass_disable noibrs noibpb no_stf_barrier mitigations=off console=ttyS0 console=ttyS1"
 init:
   - quay.io/densityops/vpnkit-expose-port:16ed722e  # install vpnkit-expose-port and vpnkit-iptables-wrapper on host
   - quay.io/densityops/vpnkit-forwarder:16ed722e
   # vpnkit sockets
-  #- quay.io/densityops/vpnkit-9pmount-vsock:16ed722e 
-  #- quay.io/densityops/vpnkit-tap-vsockd:16ed722e
+  - quay.io/densityops/vpnkit-9pmount-vsock:16ed722e 
+  - quay.io/densityops/vpnkit-tap-vsockd:16ed722e
   - linuxkit/init:78fb57c7da07c4e43c3a37b27755581da087a3b6
   - linuxkit/runc:bf1e0c61fb4678d6428d0aabbd80db5ea24e4d4d
   - linuxkit/containerd:cc02c2af9c928c2faeccbe4edc78bd297ad91866
