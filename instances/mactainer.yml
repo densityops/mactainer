@@ -3,11 +3,6 @@ kernel:
   image: linuxkit/kernel:5.10.47  
   cmdline: "earlyprintk=serial page_poison=1 vsyscall=emulate panic=1 nospec_store_bypass_disable noibrs noibpb no_stf_barrier mitigations=off console=ttyS0 console=ttyS1"
 init:
-  - quay.io/densityops/vpnkit-expose-port:16ed722e  # install vpnkit-expose-port and vpnkit-iptables-wrapper on host
-  - quay.io/densityops/vpnkit-forwarder:16ed722e
-  # vpnkit sockets
-  - quay.io/densityops/vpnkit-9pmount-vsock:16ed722e 
-  - quay.io/densityops/vpnkit-tap-vsockd:16ed722e
   - linuxkit/init:78fb57c7da07c4e43c3a37b27755581da087a3b6
   - linuxkit/runc:bf1e0c61fb4678d6428d0aabbd80db5ea24e4d4d
   - linuxkit/containerd:cc02c2af9c928c2faeccbe4edc78bd297ad91866
@@ -33,34 +28,6 @@ onboot:
   - name: mount
     image: linuxkit/mount:71c868267a4503f99e84fd7698717a3669d9dfdb
     command: ["/usr/bin/mountie", "/var/lib"]
-  - name: services0
-    image: linuxkit/ip:v0.8
-    binds:
-    - /run/config/net:/run/config/net
-    command:
-    - sh
-    - -c
-    - ip link set dev services0 up && ip address add dev services0 $(cat /run/config/net/services)
-      peer $(cat /run/config/net/internal)
-    net: new
-    runtime:
-      interfaces:
-      - name: services0
-        add: veth
-        peer: services1
-        createInRoot: false
-      bindNS:
-        net: /run/netns/services
-  - name: services1
-    image: linuxkit/ip:v0.8
-    binds:
-    - /run/config/net:/run/config/net
-    command:
-    - sh
-    - -c
-    - ip link set dev services1 up && ip address add dev services1 $(cat /run/config/net/internal)
-      peer $(cat /run/config/net/services)
-
   # make a swap file on the mounted disk
   - name: swap
     image: linuxkit/swap:0028aeae2741d28120e4d2c6efcc5af003eae395
@@ -72,15 +39,6 @@ onboot:
     - sh
     - -c
     - /swap.sh --path /var/lib/swap --size $(cat /run/config/swap/size)
-  # mount-vpnkit mounts the 9p share used by vpnkit to coordinate port forwarding
-  - name: mount-vpnkit
-    image: alpine:3.13
-    binds:
-        - /var/:/host_var:rbind,rshared
-    capabilities:
-        - CAP_SYS_ADMIN
-    rootfsPropagation: shared
-    command: ["sh", "-c", "mkdir -p /host_var/vpnkit/port && mount -v -t 9p -o trans=virtio,dfltuid=1001,dfltgid=50,version=9p2000 port /host_var/vpnkit"]
   # move logs to the mounted disk (this is a temporary fix until we can limit the log sizes)
   - name: move-logs
     image: alpine:3.13
@@ -137,17 +95,10 @@ services:
      - /run/guest:/run
      - /run/host:/run/host
      - /run/guest:/var/run
-     - /usr/bin/vpnkit-expose-port:/usr/bin/vpnkit-expose-port # userland proxy
-     - /usr/bin/vpnkit-expose-port-wrapper:/usr/bin/vpnkit-expose-port-wrapper
-     - /etc/vpnkit-expose-port.json:/etc/vpnkit-expose-port.json
-     - /usr/bin/vpnkit-iptables-wrapper:/usr/bin/iptables # iptables wrapper
     command: [ "/usr/local/bin/docker-init", "/usr/local/bin/dockerd", "--",
-            "--userland-proxy-path", "/usr/bin/vpnkit-expose-port-wrapper",
             "--config-file", "/run/config/docker/daemon.json",
             "--swarm-default-advertise-addr=eth0",
             "--storage-driver", "overlay2" ]
-            # "--host-gateway-ip", "192.168.65.2",
-            # "--containerd", "/var/run/containerd/containerd.sock",
     runtime:
       mkdir: ["/var/lib/docker"]
       cgroups:
@@ -163,14 +114,6 @@ files:
   - path: /var/opt/containerd
     directory: true
     optional: false
-  # create guest directories
-  - path: /etc/init.d/005-vpnkit-forward
-    directory: false
-    contents: |
-      #!/bin/sh
-      /usr/bin/vpnkit-forwarder -debug -data-listen 3/62373 -control-listen /run/host/backend.sock &
-    optional: false
-    mode: "0755"
   - path: /etc/init.d/001-guest-host
     directory: false
     contents: |
@@ -178,21 +121,10 @@ files:
       mkdir -p /run/guest /run/host
     optional: false
     mode: "0755"
-  - path: /etc/vpnkit-expose-port.json
-    directory: false
-    contents: '{"control": "/run/host/backend.sock", "local-bind": "never"}'
-    optional: false
-  - path: /usr/bin/vpnkit-expose-port-wrapper
-    directory: false
-    contents: |
-      #!/bin/sh
-      /usr/bin/vpnkit-expose-port -local-bind never $@
-    optional: false
-    mode: "0755"
   - path: /etc/os-release
     directory: false
     contents: |
-      PRETTY_NAME="mactainer"
+      PRETTY_NAME="mactainer-v0.1"
     optional: false
   - path: /etc/host-hypervisor
     directory: false
@@ -246,53 +178,3 @@ files:
         shim_debug = true
       [plugins.opt]
         path = "/var/opt/containerd"
-  - path: /var/lib/docker-containerd
-    directory: true
-    optional: false
-  - path: /etc/containerd/docker-config.toml
-    directory: false
-    contents: |
-      root = "/var/lib/docker-containerd/daemon"
-      state = "/var/run/docker-containerd/daemon"
-      plugin_dir = ""
-      disabled_plugins = ["cri"]
-      oom_score = -500
-
-      [grpc]
-        address = "/var/run/docker-containerd/containerd.sock"
-        tcp_address = ""
-        tcp_tls_cert = ""
-        tcp_tls_key = ""
-        uid = 0
-        gid = 0
-        max_recv_message_size = 16777216
-        max_send_message_size = 16777216
-
-      [debug]
-        address = "/var/run/docker-containerd/containerd-debug.sock"
-        uid = 0
-        gid = 0
-        level = "debug"
-
-      [metrics]
-        address = ""
-        grpc_histogram = false
-
-      [cgroup]
-        path = ""
-
-      [plugins]
-        [plugins.linux]
-          shim = "containerd-shim"
-          runtime = "runc"
-          runtime_root = "/usr/bin/runc"
-          no_shim = false
-          shim_debug = true
-  #- path: /etc/init.d/030-docker-containerd
-  #  directory: false
-  #  contents: |
-  #    #!/bin/sh
-  #    mkdir -p /run/docker-containerd
-  #    /usr/bin/containerd --config /etc/containerd/docker-config.toml &
-  #  optional: false
-  #  mode: "0755"

@@ -10,3 +10,18 @@
 [submodule "deps/hyperkit"]
 	path = deps/hyperkit
 	url = git@github.com:moby/hyperkit.git
+[submodule "deps/gvisor-tap-vsock"]
+	path = deps/gvisor-tap-vsock
+	url = git@github.com:containers/gvisor-tap-vsock.git
+[submodule "deps/socat"]
+	path = deps/socat
+	url = git://repo.or.cz/socat.git
+[submodule "deps/vsock"]
+	path = deps/vsock
+	url = git@github.com:mdlayher/vsock.git
+[submodule "deps/machine"]
+	path = deps/machine
+	url = git@github.com:densityops/machine.git
+[submodule "deps/machine-driver-hyperkit"]
+	path = deps/machine-driver-hyperkit
+	url = git@github.com:densityops/machine-driver-hyperkit.git
