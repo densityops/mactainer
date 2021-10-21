@@ -16,3 +16,7 @@
 
 # build folder
 _build
+
+mct/cmd/mct/mct
+mct/cmd/mct-bundler/mct-bundler
+mct/pkg/bundle/files

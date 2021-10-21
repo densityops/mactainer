@@ -1,0 +1,106 @@
+com.docker.vpnkit \
+--ethernet fd:3 \
+--diagnostics fd:4 \
+--pcap fd:5 \
+--vsock-path vms/0/connect \
+--host-names host.docker.internal,docker.for.mac.host.internal,docker.for.mac.localhost \
+--listen-backlog 32 \
+--mtu 1500 \
+--allowed-bind-addresses 0.0.0.0 \
+--http /Users/mabe01/Library/Group Containers/group.com.docker/http_proxy.json \
+--dhcp /Users/mabe01/Library/Group Containers/group.com.docker/dhcp.json \
+--port-max-idle-time 300 \
+--max-connections 2000 \
+--gateway-ip 192.168.65.1 \
+--host-ip 192.168.65.2 \
+--lowest-ip 192.168.65.3 \
+--highest-ip 192.168.65.254 \
+--gc-compact-interval 1800
+
+
+
+com.docker.hyperkit -A -u -F vms/0/hyperkit.pid \
+-c 8 -m 2048M \
+-s 0:0,hostbridge \
+-s 31,lpc \
+-s 1:0,virtio-vpnkit,path=vpnkit.eth.sock,uuid=f6e24ab1-41c2-47f1-b55d-29a1b1b98756 \
+-U 8bcfb44a-998d-465f-89b0-960e38343089 \
+-s 2:0,virtio-blk,/Users/mabe01/Library/Containers/com.docker.docker/Data/vms/0/data/Docker.raw \
+-s 3,virtio-sock,guest_cid=3,path=vms/0,guest_forwards=2376;1525 \ 
+-s 4,virtio-rnd \
+-l com1,null,asl,log=vms/0/console-ring \
+-f kexec,/Applications/Docker.app/Contents/Resources/linuxkit/kernel,/Applications/Docker.app/Contents/Resources/linuxkit/initrd.img,earlyprintk=serial page_poison=1 vsyscall=emulate panic=1 nospec_store_bypass_disable noibrs noibpb no_stf_barrier mitigations=off console=ttyS0 console=ttyS1  \
+vpnkit.connect=connect://2/1999
+
+/Users/mabe01/code/src/github.com/densityops/mactainer/_build/bin/hyperkit -A -u -F _build/run/mactainer/hyperkit.pid \
+-c 2 -m 2048M \
+-s 0:0,hostbridge \
+-s 31,lpc \
+-s 1:0,virtio-vpnkit,path=/Users/mabe01/Library/Containers/com.docker.docker/Data/vpnkit.eth.sock,uuid=ca40f26a-41ed-4ff0-ae17-a5e58878c516 \
+-U e83285ee-b827-4720-b3a5-021b480faa64 \
+-s 2:0,ahci-hd,_build/run/mactainer/disk.raw \
+-s 3,virtio-sock,guest_cid=3,path=_build/run/mactainer,guest_forwards=2376 \
+-s 4,ahci-cd,_build/run/mactainer/data.iso \
+-s 5,virtio-rnd \
+-l com1,stdio,log=_build/run/mactainer/console-ring \
+-f kexec,_build/instances/mactainer/mactainer-kernel,_build/instances/mactainer/mactainer-initrd.img,earlyprintk=serial earlyprintk=serial page_poison=1 vsyscall=emulate panic=1 nospec_store_bypass_disable noibrs noibpb no_stf_barrier mitigations=off console=ttyS0 console=ttyS1
+
+
+
+
+onboot.011-vpnkit-9pmount-vsock.out;starting in connect mode with port=f3a5, tag=port, path=/port 
+[12:48:03.119][Moby ][Info ] 2019-03-14T17:48:02Z,onboot.011-vpnkit-9pmount-vsock.out;failed to connect AF_VSOCK, trying with AF_HVSOCK serviceid=0000f3a5-FACB-11E6-BD58-64006A7986D3 
+[12:48:03.148][Moby ]
+[Info ] 2019-03-14T17:48:02Z,onboot.011-vpnkit-9pmount-vsock.out;mount successful for (serviceid=0000f3a5-FACB-11E6-BD58-64006A7986D3) port=f3a5 tag=port path=/port
+
+
+/Users/mabe01/code/src/github.com/densityops/mactainer/_build/bin/hyperkit -A -u -F _build/run/mactainer/hyperkit.pid \
+-c 2 -m 2048M -s 0:0,hostbridge \
+-s 31,lpc -s 1:0,virtio-vpnkit,path=_build/run/mactainer/vpnkit_eth.sock,uuid=5ce81ca6-a37e-425a-836c-c55191a69e65 \
+-U a965ab85-95fb-42f3-8240-6e1f3299d069 \
+-s 2:0,ahci-hd,_build/run/mactainer/disk.raw \
+-s 3,virtio-sock,guest_cid=3,path=_build/run/mactainer,guest_forwards=2376;1525;62373 \
+-s 4,ahci-cd,_build/run/mactainer/data.iso -s 5,virtio-rnd \
+-s 6,virtio-9p,path=_build/run/mactainer/vpnkit_port.sock,tag=port \
+-l com1,stdio,log=_build/run/mactainer/console-ring \
+-f kexec,_build/instances/mactainer/mactainer-kernel,_build/instances/mactainer/mactainer-initrd.img,earlyprintk=serial earlyprintk=serial page_poison=1 vsyscall=emulate panic=1 nospec_store_bypass_disable noibrs noibpb no_stf_barrier mitigations=off console=ttyS0 console=ttyS1
+
+nsenter -t $(pidof vpnkit-forwarder) -a ./vpnkit-forwarder -debug -data-listen 3/62373 /run/host/backend.sock
+
+On host:
+go build cmd/vpnkit-forwarder/main.go 
+./main -debug -data-listen ../../../../mactainer/_build/run/mactainer/connect 
+
+On VM:
+/vpnkit-forwarder -data-connect /run/host-services/vpnkit-data.sock -control-listen /run/host/backend.sock
+
+
+
+hyperkit -A -u -F _build/run/mactainer/hyperkit.pid \
+    -c 2 -m 2048M \
+    -s 0:0,hostbridge \
+    -s 31,lpc \
+    -s 1:0,virtio-vpnkit,path=_build/run/mactainer/vpnkit_eth.sock,uuid=473e012b-a8ee-4ab8-9bc8-5943b81a26d7 -U 7973dbd8-ad88-4619-bee5-9fbfef73588a \
+    -s 2:0,ahci-hd,_build/run/mactainer/disk.raw \
+    -s 3,virtio-sock,guest_cid=3,path=_build/run/mactainer,guest_forwards=2376;1525;62373 \
+    -s 4,ahci-cd,_build/run/mactainer/data.iso \
+    -s 5,virtio-rnd \
+    -s 6,virtio-9p,path=_build/run/mactainer/vpnkit_port.sock,tag=port \
+    -l com1,stdio,log=_build/run/mactainer/console-ring \
+    -f kexec,_build/instances/mactainer/mactainer-kernel,_build/instances/mactainer/mactainer-initrd.img,earlyprintk=serial earlyprintk=serial page_poison=1 vsyscall=emulate panic=1 nospec_store_bypass_disable noibrs noibpb no_stf_barrier mitigations=off console=ttyS0 console=ttyS1
+
+
+/Users/mabe01/code/src/github.com/densityops/mactainer/_build/bin/hyperkit -A -u \
+-F /Users/mabe01/code/src/github.com/densityops/mactainer/_build/run/machines/mactainer/hyperkit.pid \
+-c 4 -m 8192M \
+-s 0:0,hostbridge -s 31,lpc \
+-s 1:0,virtio-vpnkit,path=/Users/mabe01/code/src/github.com/densityops/mactainer/_build/run/tap.vsock,uuid=c3d68012-0208-11ea-9fd7-f2189899ab08 \
+-U c3d68012-0208-11ea-9fd7-f2189899ab08 \
+-s 2:0,virtio-blk,file:///Users/mabe01/code/src/github.com/densityops/mactainer/_build/run/machines/mactainer/mactainer.qcow2,format=qcow \
+-s 3,virtio-sock,guest_cid=3,path=/Users/mabe01/code/src/github.com/densityops/mactainer/_build/run/machines/mactainer \
+-s 4,virtio-rnd \
+-l com1,autopty=/Users/mabe01/code/src/github.com/densityops/mactainer/_build/run/machines/mactainer/tty,log=/Users/mabe01/code/src/github.com/densityops/mactainer/_build/run/machines/mactainer/console-ring \
+-f kexec,/Users/mabe01/code/src/github.com/densityops/mactainer/_build/instances/mactainer/vmlinuz-5.13.16-200.fc34.x86_64,/Users/mabe01/code/src/github.com/densityops/mactainer/_build/instances/mactainer/initramfs-5.13.16-200.fc34.x86_64.img,earlyprintk=serial BOOT_IMAGE=(hd0,gpt3)/ostree/fedora-coreos-5dce8a8faac406dc3baf6e1e6ece5946780cc3bd5de6fb78075526ec183a93f6/vmlinuz-5.13.16-200.fc34.x86_64 mitigations=auto,nosmt console=tty0 console=ttyS0,115200n8 ignition.platform.id=qemu ignition.firstboot ostree=/ostree/boot.1/fedora-coreos/5dce8a8faac406dc3baf6e1e6ece5946780cc3bd5de6fb78075526ec183a93f6/0
+
+
+hyperkit -A -u -F /Users/mabe01/code/src/github.com/densityops/mactainer/_build/run/mactainer/hyperkit.pid -c 2 -m 2048M -s 0:0,hostbridge -s 31,lpc -s 1:0,virtio-vpnkit,path=/Users/mabe01/code/src/github.com/densityops/mactainer/_build/run/mactainer/vpnkit.sock,uuid=a798e408-b39c-4423-9a9e-e71b91cea887 -U 1e8232c8-f275-4bc7-9ae0-4758f5625ac7 -s 2:0,ahci-hd,/Users/mabe01/code/src/github.com/densityops/mactainer/_build/run/mactainer/disk.raw -s 3,virtio-sock,guest_cid=3,path=/Users/mabe01/code/src/github.com/densityops/mactainer/_build/run/mactainer,guest_forwards=2376;1525;62373 -s 4,ahci-cd,/Users/mabe01/code/src/github.com/densityops/mactainer/_build/run/mactainer/data.iso -s 5,virtio-rnd -l com1,stdio,log=/Users/mabe01/code/src/github.com/densityops/mactainer/_build/run/mactainer/console-ring -f kexec,/Users/mabe01/code/src/github.com/densityops/mactainer/_build/instances/mactainer/mactainer-kernel,/Users/mabe01/code/src/github.com/densityops/mactainer/_build/instances/mactainer/mactainer-initrd.img,earlyprintk=serial earlyprintk=serial page_poison=1 vsyscall=emulate panic=1 nospec_store_bypass_disable noibrs noibpb no_stf_barrier mitigations=off console=ttyS0 console=ttyS1
