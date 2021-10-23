@@ -17,15 +17,20 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 
 	"github.com/densityops/mactainer/mct/pkg/bundler"
+	"github.com/google/go-github/v39/github"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-plugin"
 	"github.com/mitchellh/go-homedir"
+	progressbar "github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
+	"golang.org/x/net/context"
 )
 
 // setupCmd represents the setup command
@@ -38,12 +43,20 @@ and usage of using your command. For example:
 Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		logger := hclog.New(&hclog.LoggerOptions{
 			Name:   "plugin",
 			Output: os.Stdout,
 			Level:  hclog.Info,
 		})
+
+		bundle, err := getLatestBundle(cmd.Context())
+		cobra.CheckErr(err)
+		bundleTarget := fmt.Sprintf("%s/bundles/%s", mctHome, bundle.GetName())
+		if !bundleExists(bundleTarget) {
+			fmt.Fprintf(cmd.OutOrStdout(), "Downloading bundle %s (%s)\n", bundle.GetName(), bundle.GetBrowserDownloadURL())
+			downloadBundle(bundle.GetBrowserDownloadURL(), bundleTarget)
+		}
 
 		// We're a host! Start by launching the plugin process.
 		client := plugin.NewClient(&plugin.ClientConfig{
@@ -69,6 +82,7 @@ to quickly create a Cobra application.`,
 		b := raw.(bundler.Unbundler)
 		out := b.Unbundle(mctHome)
 		fmt.Fprintf(cmd.OutOrStdout(), "Setup done: %s\n", out)
+		return nil
 	},
 }
 
@@ -98,4 +112,50 @@ var handshakeConfig = plugin.HandshakeConfig{
 // pluginMap is the map of plugins we can dispense.
 var pluginMap = map[string]plugin.Plugin{
 	"unbundler": &bundler.UnbundlerPlugin{},
+}
+
+func getLatestBundle(ctx context.Context) (*github.ReleaseAsset, error) {
+	client := github.NewClient(nil)
+	release, _, err := client.Repositories.GetLatestRelease(ctx, "densityops", "mactainer")
+	if err != nil {
+		return nil, err
+	}
+	for _, asset := range release.Assets {
+		if asset.GetLabel() == "bundle" {
+			return asset, nil
+		}
+	}
+	return nil, fmt.Errorf("unable to get bundle from latest release")
+}
+
+func downloadBundle(url string, dest string) error {
+	req, _ := http.NewRequest("GET", url, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY, 0755)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	bar := progressbar.DefaultBytes(
+		resp.ContentLength,
+		"Downloading",
+	)
+	_, err = io.Copy(io.MultiWriter(f, bar), resp.Body)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func bundleExists(bundle string) bool {
+	if _, err := os.Stat(bundle); os.IsNotExist(err) {
+		return false
+	}
+	return true
 }

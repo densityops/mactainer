@@ -19,9 +19,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/densityops/machine/drivers/hyperkit"
+	"github.com/densityops/mactainer/mct/pkg/ignition"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -50,7 +53,7 @@ to quickly create a Cobra application.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "Starting machine\n")
 		if err := os.MkdirAll(filepath.Join(mctHome, "machines", "mct"), os.ModePerm); err != nil {
-			cobra.CheckErr(err)
+			return err
 		}
 		logrus.SetLevel(logrus.DebugLevel)
 		driver := hyperkit.NewDriver("mct", mctHome)
@@ -104,6 +107,17 @@ to quickly create a Cobra application.`,
 			if err = libMachineAPIClient.Save(host); err != nil {
 				return fmt.Errorf("error saving host: %s", err)
 			}
+			// create ignition
+			if err := ignition.WriteIgnition(filepath.Join(machineDir, "mct.ign"), host.PublicKey); err != nil {
+				return err
+			}
+			// start deamon
+			fmt.Fprintln(cmd.OutOrStdout(), "Starting mct daemon")
+			cmd := exec.Command("mct", "daemon", "start")
+			if err := cmd.Run(); err != nil {
+				return err
+			}
+			time.Sleep(time.Second * 10)
 		} else {
 			// save the host
 			driverJSON, _ := json.Marshal(driver)

@@ -1,73 +1,65 @@
 package ssh
 
 import (
+	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"log"
 
+	"github.com/mikesmitty/edkey"
 	"golang.org/x/crypto/ssh"
 )
 
 func GenerateKeys() (string, string, error) {
-	bitSize := 4096
-	privateKey, err := generatePrivateKey(bitSize)
+	publicKey, privateKey, err := generateKeysed25519()
 	if err != nil {
 		return "", "", err
 	}
-	publicKeyBytes, err := generatePublicKey(&privateKey.PublicKey)
+	publicKeyBytes, err := generatePublicKey(publicKey)
 	if err != nil {
 		return "", "", err
 	}
 	return string(encodePrivateKeyToPEM(privateKey)[:]), string(publicKeyBytes[:]), nil
 }
 
-// generatePrivateKey creates a RSA Private Key of specified byte size
-func generatePrivateKey(bitSize int) (*rsa.PrivateKey, error) {
-	// Private Key generation
-	privateKey, err := rsa.GenerateKey(rand.Reader, bitSize)
+func generateKeysed25519() (*ed25519.PublicKey, *ed25519.PrivateKey, error) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("could not generate private key: %s", err)
 	}
-
-	// Validate Private Key
-	err = privateKey.Validate()
-	if err != nil {
-		return nil, err
-	}
-
-	log.Println("Private Key generated")
-	return privateKey, nil
+	return &publicKey, &privateKey, nil
 }
 
-// encodePrivateKeyToPEM encodes Private Key from RSA to PEM format
-func encodePrivateKeyToPEM(privateKey *rsa.PrivateKey) []byte {
+// encodePrivateKeyToPEM encodes Private Key from ed25519 to PEM format
+func encodePrivateKeyToPEM(privateKey *ed25519.PrivateKey) []byte {
 	// Get ASN.1 DER format
-	privDER := x509.MarshalPKCS1PrivateKey(privateKey)
+	// privDER, err := x509.MarshalPKCS8PrivateKey(*privateKey)
+	// if err != nil {
+	// 	return nil
+	// }
+	keyBytes := edkey.MarshalED25519PrivateKey(*privateKey)
 
 	// pem.Block
 	privBlock := pem.Block{
-		Type:    "RSA PRIVATE KEY",
-		Headers: nil,
-		Bytes:   privDER,
+		Type:  "OPENSSH PRIVATE KEY",
+		Bytes: keyBytes,
 	}
 
 	// Private key in PEM format
 	privatePEM := pem.EncodeToMemory(&privBlock)
-
 	return privatePEM
 }
 
 // generatePublicKey take a rsa.PublicKey and return bytes suitable for writing to .pub file
 // returns in the format "ssh-rsa ..."
-func generatePublicKey(privatekey *rsa.PublicKey) ([]byte, error) {
-	publicRsaKey, err := ssh.NewPublicKey(privatekey)
+func generatePublicKey(publickey *ed25519.PublicKey) ([]byte, error) {
+	publicKey, err := ssh.NewPublicKey(*publickey)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not generate public key: %s", err)
 	}
 
-	pubKeyBytes := ssh.MarshalAuthorizedKey(publicRsaKey)
+	pubKeyBytes := ssh.MarshalAuthorizedKey(publicKey)
 
 	log.Println("Public key generated")
 	return pubKeyBytes, nil

@@ -230,7 +230,7 @@ func ignitionMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ignition", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Content-Type", "application/json")
-		http.ServeFile(w, r, "/Users/mabe01/code/src/github.com/densityops/mactainer/_build/instances/mactainer/mactainer.ign")
+		http.ServeFile(w, r, filepath.Join(machineDir, machineName, "mct.ign"))
 	})
 	return mux
 }

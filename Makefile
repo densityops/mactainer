@@ -22,6 +22,8 @@
   --abbrev=12 \
   --date='format-local:%Y%m%d%H%M%S' \
   --format="%cd-%h"
+# github-release release     --user densityops     --repo mactainer     --tag v0.1.0     --name "mct-bundle"     --description "mct-bundle v1.0.0"     --pre-release
+# github-release upload     --user densityops     --repo mactainer     --tag v0.1.0     --name "mct-bundle-v1.0.0"     --file mct/pkg/bundle/files/bin/mct-bundle-v1.0.0 -l bundle
 
 OPAMROOT ?= ~/.opam
 OPAM_COMP := 4.11.1
