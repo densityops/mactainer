@@ -166,13 +166,16 @@ func runDaemon(ctx context.Context, config *types.Configuration) error {
 		}
 	}()
 
-	ln, err := virtualNetwork.Listen("tcp", fmt.Sprintf("%s:8080", "192.168.127.1"))
+	ln, err := virtualNetwork.Listen("tcp", fmt.Sprintf("%s:80", "192.168.127.1"))
 	if err != nil {
-		return fmt.Errorf("could not bind tcp/8080 on 192.168.127.1: %s", err)
+		return fmt.Errorf("could not bind tcp/80 on 192.168.127.1: %s", err)
 	}
 
 	go func() {
 		mux := ignitionMux()
+		mux.Handle("/services/forwarder/all", virtualNetwork.Mux())
+		mux.Handle("/services/forwarder/expose", virtualNetwork.Mux())
+		mux.Handle("/services/forwarder/unexpose", virtualNetwork.Mux())
 		if err := http.Serve(ln, handlers.LoggingHandler(os.Stderr, mux)); err != nil {
 			errCh <- errors.Wrap(err, "gateway http.Serve failed")
 		}

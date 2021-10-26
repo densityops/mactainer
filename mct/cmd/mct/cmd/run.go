@@ -19,13 +19,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"time"
 
 	"github.com/densityops/machine/drivers/hyperkit"
 	"github.com/densityops/mactainer/mct/pkg/ignition"
-	"github.com/sirupsen/logrus"
+	"github.com/densityops/mactainer/mct/pkg/libmachine/host"
 	"github.com/spf13/cobra"
 )
 
@@ -51,17 +49,18 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var host *host.Host
 		fmt.Fprintf(cmd.OutOrStdout(), "Starting machine\n")
 		if err := os.MkdirAll(filepath.Join(mctHome, "machines", "mct"), os.ModePerm); err != nil {
 			return err
 		}
-		logrus.SetLevel(logrus.DebugLevel)
+		//logrus.SetLevel(logrus.DebugLevel)
 		driver := hyperkit.NewDriver("mct", mctHome)
 		driver.HyperKitPath = filepath.Join(mctHome, "bin", "hyperkit")
 		driver.QcowToolPath = filepath.Join(mctHome, "bin", "qcow-tool")
 		driver.UUID = "c3d68012-0208-11ea-9fd7-f2189899ab08"
 		// TODO: read from bundle
-		driver.Cmdline = "BOOT_IMAGE=(hd0,gpt3)/ostree/fedora-coreos-5dce8a8faac406dc3baf6e1e6ece5946780cc3bd5de6fb78075526ec183a93f6/vmlinuz-5.13.16-200.fc34.x86_64 mitigations=auto,nosmt console=tty0 console=ttyS0,115200n8 ignition.platform.id=qemu ignition.config.url=http://192.168.127.1:8080/ignition ostree=/ostree/boot.1/fedora-coreos/5dce8a8faac406dc3baf6e1e6ece5946780cc3bd5de6fb78075526ec183a93f6/0 root=LABEL=root rw rootflags=prjquota"
+		driver.Cmdline = "BOOT_IMAGE=(hd0,gpt3)/ostree/fedora-coreos-5dce8a8faac406dc3baf6e1e6ece5946780cc3bd5de6fb78075526ec183a93f6/vmlinuz-5.13.16-200.fc34.x86_64 mitigations=auto,nosmt console=tty0 console=ttyS0,115200n8 ignition.platform.id=qemu ignition.config.url=http://192.168.127.1:80/ignition ostree=/ostree/boot.1/fedora-coreos/5dce8a8faac406dc3baf6e1e6ece5946780cc3bd5de6fb78075526ec183a93f6/0 root=LABEL=root rw rootflags=prjquota"
 		//driver.BootromPath = filepath.Join(mctHome, "bundles", "v1.0.0", "UEFI.fd")
 		driver.VmlinuzPath = filepath.Join(mctHome, "bundles", "v1.0.0", "kernel")
 		driver.InitrdPath = filepath.Join(mctHome, "bundles", "v1.0.0", "initrd.img")
@@ -76,26 +75,24 @@ to quickly create a Cobra application.`,
 
 		libMachineAPIClient, cleanup := createLibMachineClient()
 		defer cleanup()
+
 		driverJSON, _ := json.Marshal(driver)
 
-		fmt.Fprintf(cmd.OutOrStdout(), "Creating host: %s\n", driver.MachineName)
-		host, err := libMachineAPIClient.NewHost("hyperkit", binDir, driverJSON)
-		if err != nil {
-			return fmt.Errorf("could not create host: %s", err)
-		}
-
-		fmt.Fprintf(cmd.OutOrStdout(), "Checking if machine %s exists\n", host.Name)
 		exists, err := libMachineAPIClient.Exists("mct")
 		if err != nil {
 			return fmt.Errorf("error checking if machine exists: %s", err)
 		}
 
 		if !exists {
+			host, err := libMachineAPIClient.NewHost("hyperkit", binDir, driverJSON)
+			if err != nil {
+				return fmt.Errorf("could not create host: %s", err)
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Creating machine: %s in %s\n", host.Name, libMachineAPIClient.MachinesDir)
 			machineDir := filepath.Join(libMachineAPIClient.MachinesDir, "mct")
 			os.MkdirAll(machineDir, os.ModePerm)
 			// use ignition on first boot
-			driver.Cmdline = "BOOT_IMAGE=(hd0,gpt3)/ostree/fedora-coreos-5dce8a8faac406dc3baf6e1e6ece5946780cc3bd5de6fb78075526ec183a93f6/vmlinuz-5.13.16-200.fc34.x86_64 mitigations=auto,nosmt console=tty0 console=ttyS0,115200n8 ignition.platform.id=qemu ignition.firstboot ignition.config.url=http://192.168.127.1:8080/ignition ostree=/ostree/boot.1/fedora-coreos/5dce8a8faac406dc3baf6e1e6ece5946780cc3bd5de6fb78075526ec183a93f6/0"
+			driver.Cmdline = "BOOT_IMAGE=(hd0,gpt3)/ostree/fedora-coreos-5dce8a8faac406dc3baf6e1e6ece5946780cc3bd5de6fb78075526ec183a93f6/vmlinuz-5.13.16-200.fc34.x86_64 mitigations=auto,nosmt console=tty0 console=ttyS0,115200n8 ignition.platform.id=qemu ignition.firstboot ignition.config.url=http://192.168.127.1:80/ignition ostree=/ostree/boot.1/fedora-coreos/5dce8a8faac406dc3baf6e1e6ece5946780cc3bd5de6fb78075526ec183a93f6/0"
 			driverJSON, _ := json.Marshal(driver)
 			host.UpdateConfig(driverJSON)
 			if err = host.Driver.Create(); err != nil {
@@ -111,30 +108,26 @@ to quickly create a Cobra application.`,
 			if err := ignition.WriteIgnition(filepath.Join(machineDir, "mct.ign"), host.PublicKey); err != nil {
 				return err
 			}
-			// start deamon
-			fmt.Fprintln(cmd.OutOrStdout(), "Starting mct daemon")
-			cmd := exec.Command("mct", "daemon", "start")
-			if err := cmd.Run(); err != nil {
+		} else {
+			host, err := libMachineAPIClient.Load("mct")
+			if err != nil {
 				return err
 			}
-			time.Sleep(time.Second * 10)
-		} else {
-			// save the host
-			driverJSON, _ := json.Marshal(driver)
 			host.UpdateConfig(driverJSON)
 			if err = libMachineAPIClient.Save(host); err != nil {
 				return fmt.Errorf("error saving host: %s", err)
 			}
 		}
-
+		host, err = libMachineAPIClient.Load("mct")
+		if err != nil {
+			return err
+		}
 		s, err := host.Driver.GetState()
 		if err != nil {
 			return fmt.Errorf("could not get state: %s", err)
 		}
 
 		if s.String() != "Running" {
-			// https://stackoverflow.com/questions/39508086/golang-exec-background-process-and-get-its-pid Start and leave the daemon running
-			// https://github.com/sevlyar/go-daemon/blob/master/examples/cmd/gd-simple/simple.go
 			if err = host.Driver.Start(); err != nil {
 				fmt.Fprintf(cmd.OutOrStdout(), "could not start machine: %s\n", err)
 			}
@@ -143,7 +136,10 @@ to quickly create a Cobra application.`,
 
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "Machine state: %s\n", s.String())
+		if err := waitForMachineState(host, stateRunning, 15); err != nil {
+			return fmt.Errorf("machine did not enter running state")
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Started machine: %s\n", host.Name)
 
 		return nil
 	},

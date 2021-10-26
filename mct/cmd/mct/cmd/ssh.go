@@ -17,6 +17,9 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"strconv"
 
 	"github.com/spf13/cobra"
 )
@@ -24,15 +27,48 @@ import (
 // sshCmd represents the ssh command
 var sshCmd = &cobra.Command{
 	Use:   "ssh",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "ssh to mct",
+	Long:  `ssh`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("ssh called")
+		libMachineAPIClient, cleanup := createLibMachineClient()
+		defer cleanup()
+
+		host, err := libMachineAPIClient.Load("mct")
+		if err != nil {
+			cobra.CheckErr(err)
+		}
+
+		state, err := host.Driver.GetState()
+		if err != nil {
+			cobra.CheckErr(err)
+		}
+		if state.String() != stateRunning {
+			cobra.CheckErr(fmt.Errorf("cannot ssh to a machine that is not running (%s)", state.String()))
+		}
+
+		privKey, err := os.CreateTemp("", "mct-ssh-*")
+		if err != nil {
+			cobra.CheckErr(err)
+		}
+		defer privKey.Close()
+		defer os.Remove(privKey.Name())
+		if _, err := privKey.Write([]byte(host.PrivateKey)); err != nil {
+			cobra.CheckErr(err)
+		}
+
+		os.Chmod(privKey.Name(), 0400)
+		sshDestination := "core@localhost"
+		port := strconv.Itoa(2022)
+
+		argsSSH := []string{"-i", privKey.Name(), "-p", port, sshDestination, "-o", "UserKnownHostsFile /dev/null", "-o", "StrictHostKeyChecking no"}
+
+		fmt.Printf("Connecting to vm %s. To close connection, use `~.` or `exit`\n", "mct")
+		cmdSSH := exec.Command("ssh", argsSSH...)
+
+		cmdSSH.Stdout = os.Stdout
+		cmdSSH.Stderr = os.Stderr
+		cmdSSH.Stdin = os.Stdin
+		cmdSSH.Run()
 	},
 }
 

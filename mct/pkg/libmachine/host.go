@@ -14,6 +14,8 @@ limitations under the License.
 package libmachine
 
 import (
+	"strings"
+
 	"github.com/densityops/mactainer/mct/pkg/libmachine/host"
 	"github.com/densityops/mactainer/mct/pkg/libmachine/ssh"
 )
@@ -36,7 +38,7 @@ func (api *Client) NewHost(driverName string, driverPath string, rawDriver []byt
 		DriverName:    driver.DriverName(),
 		DriverPath:    driverPath,
 		RawDriver:     rawDriver,
-		PublicKey:     pubKey,
+		PublicKey:     strings.TrimRight(pubKey, "\r\n"),
 		PrivateKey:    privKey,
 	}, nil
 }

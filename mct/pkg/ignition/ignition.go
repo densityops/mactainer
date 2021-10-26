@@ -18,8 +18,8 @@ passwd:
   # core/core
     - name: core
       ssh_authorized_keys:
-        - {{.PubKey}}
-      password_hash: $y$j9T$5J9zYWR/2iOJu//O5VVca.$ZKbQhIcgXchJYgBO0ZnGk4o0cCxn7GVZ1.CbYIh6uR0
+        - "{{.PubKey}}"
+      password_hash: "$y$j9T$5J9zYWR/2iOJu//O5VVca.$ZKbQhIcgXchJYgBO0ZnGk4o0cCxn7GVZ1.CbYIh6uR0"
 
 systemd:
   units:
