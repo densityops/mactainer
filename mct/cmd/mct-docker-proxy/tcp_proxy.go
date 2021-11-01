@@ -17,9 +17,12 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/url"
 	"sync"
 )
 
@@ -41,6 +44,26 @@ func NewTCPProxy(frontendAddr, backendAddr *net.TCPAddr) (*TCPProxy, error) {
 	listener, err := net.ListenTCP("tcp"+string(ipVersion), frontendAddr)
 	if err != nil {
 		return nil, err
+	}
+
+	// expose using gvisor-tap-vsock
+	u, err := url.Parse(fmt.Sprintf("http://%s:%s/services/forwarder/expose", getAPIEndpoint(), apiEndpointPort))
+	if err != nil {
+		return nil, err
+	}
+	// only ipv4
+	if frontendAddr.IP.To4() != nil {
+		expose := Expose{
+			Local:    fmt.Sprintf("%s:%d", "0.0.0.0", listener.Addr().(*net.TCPAddr).Port),
+			Remote:   fmt.Sprintf("%s:%d", "192.168.127.2", listener.Addr().(*net.TCPAddr).Port),
+			Protocol: "tcp",
+		}
+		log.Printf("gvisor-tap-vsock: expose %+v\n", expose)
+		if err := postRequest(context.Background(), u, expose); err != nil {
+			return nil, err
+		}
+	} else {
+		log.Printf("gvisor-tap-vsock: ignoring ipv6: %+v\n", frontendAddr)
 	}
 	// If the port in frontendAddr was 0 then ListenTCP will have a picked
 	// a port to listen on, hence the call to Addr to get that actual port:
@@ -90,6 +113,19 @@ func (proxy *TCPProxy) clientLoop(client *net.TCPConn, quit chan bool) {
 func (proxy *TCPProxy) Run() {
 	quit := make(chan bool)
 	defer close(quit)
+	unexpose := func() {
+		u, err := url.Parse(fmt.Sprintf("http://%s:%s/services/forwarder/unexpose", getAPIEndpoint(), apiEndpointPort))
+		if err != nil {
+			log.Printf("failed to parse url: %v", err)
+			return
+		}
+		unexpose := Unexpose{Local: fmt.Sprintf("0.0.0.0:%d", proxy.frontendAddr.Port)}
+		if err := postRequest(context.Background(), u, unexpose); err != nil {
+			log.Print(err)
+			return
+		}
+	}
+	defer unexpose()
 	for {
 		client, err := proxy.listener.Accept()
 		if err != nil {
@@ -101,7 +137,9 @@ func (proxy *TCPProxy) Run() {
 }
 
 // Close stops forwarding the traffic.
-func (proxy *TCPProxy) Close() { proxy.listener.Close() }
+func (proxy *TCPProxy) Close() {
+	proxy.listener.Close()
+}
 
 // FrontendAddr returns the TCP address on which the proxy is listening.
 func (proxy *TCPProxy) FrontendAddr() net.Addr { return proxy.frontendAddr }
